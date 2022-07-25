@@ -22,7 +22,7 @@ head(nyc_crime_data)
 glimpse(nyc_crime_data)
 # identify regions of interest (NYC) --------------------------------------
 
-# SORUCES:
+# SORUCES
 # https://www.icphusa.org/wp-content/uploads/2016/04/Poverty.pdf
 # https://www.cubesmart.com/blog/city-guides/nyc/5-of-the-best-neighborhoods-to-live-in-manhattan/
 # https://homevestorsfranchise.com/blog/northeast/2020/03/the-worst-neighborhoods-in-queens-that-you-should-be-buying-investment-houses-in-now/
