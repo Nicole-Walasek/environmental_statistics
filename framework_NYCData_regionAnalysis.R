@@ -37,7 +37,6 @@ getwd()
 
 # data --------------------------------------------------------------------
 load("data/crimeDataRegion_monthly.Rdata")
-
 # load framework components -----------------------------------------------
 source("explore.R")
 source("preprocess.R")
@@ -70,7 +69,10 @@ origData <- data # in case decide to use this dataset after all
 
 # fix spelling error
 head(data)
-data$region <- revalue(data$region,c("Morrisania (Bronx, Harelm)"="Morrisania (Bronx, Harlem)"))
+data$region <- revalue(data$region,c("Morrisania (Bronx, Harelm)"="Morrisania"))
+data$region <- revalue(data$region,c("Upper East Side"="Upper\nEast Side"))
+
+
 
 # little helper for plotting region wise statistics
 region_names <- setNames(levels(data$region), levels(data$ppID))
@@ -181,7 +183,7 @@ outcome <- explore.visualize_autocorr(data = data, lagMax, nSample,typeAutoCorr 
 
 ggarrange(outcome$p_acf, outcome$p_pacf, nrow = 1)
 
-ggsave("autocorrelation(raw).png", units="in", width=20, height=5, dpi=600)
+#ggsave("autocorrelation(raw).png", units="in", width=20, height=5, dpi=600)
 
 
 outcome <- explore.visualize_autocorr(data = data, lagMax, nSample,typeAutoCorr = 'stationary',
@@ -192,7 +194,7 @@ outcome <- explore.visualize_autocorr(data = data, lagMax, nSample,typeAutoCorr 
 
 ggarrange(outcome$p_acf, outcome$p_pacf, nrow = 1)
 
-ggsave("autocorrelation(stationary).png", units="in", width=20, height=5, dpi=600)
+#ggsave("autocorrelation(stationary).png", units="in", width=20, height=5, dpi=600)
 
 
 # explore change points
@@ -328,9 +330,9 @@ modelResults$Statistics_Stationary
 modelResults$Statistics_ChangePointsMBIC
 glimpse(modelResults$Statistics_ChangePointsMBIC)
 modelResults$Statistics_ChangePointsAIC
-modelResults$Compressed_Statistics # not sure if thats what we want ; add the percentile as a variable
+modelResults$Compressed_Statistics 
 
-#supposed to return the length of a period
+# returns the length of a period
 # returns nonsensical values if there is no period
 modelResults$dataMaxPeriod 
 
@@ -373,7 +375,7 @@ pNew_Sep <- pNew + facet_wrap(~ppID, ncol = 2,labeller=as_labeller(region_names)
 pNew_Sep
 
 # where both estimated together 
-pNew <-framework.plotCP(modelResults, 5, "Changepoints in mean and variance","MBIC","individual" ,freq, freqUnit, yLabel)
+pNew <-framework.plotCP(modelResults, 5, "Changepoints in mean and variance","MBIC","together" ,freq, freqUnit, yLabel)
 pNew_Sep <- pNew + facet_wrap(~ppID, ncol = 2, labeller=as_labeller(region_names))
 pNew_Sep
 
@@ -509,20 +511,33 @@ dfVis <- bind_cols(modelResults$Statistics_Mean,modelResults$Statistics_Residual
 glimpse(dfVis)
 
 corrMatVar <- dfVis %>%
-  select(m_sd,m_spectralCoef,m_apprEntropy,m_ac1,meanNumberAIC,varNumberAIC) #stat_pac6,
+  select(m_sd,
+         m_spectralCoef,
+         m_apprEntropy,
+         m_ac1,
+         meanNumberAIC,
+         varNumberAIC) #stat_pac6,
 
-names(corrMatVar) <- c('SD', 'Color of noise', 'Entropy', 'AC (lag 1)' ,'CP (mean)', 'CP (var.)') #'AC (lag 6)',
+names(corrMatVar) <-
+  c(
+    'Standard deviation',
+    'Color of noise',
+    'Entropy',
+    'Autocorrelation (lag 1)' ,
+    'Changepoints (mean)',
+    'Changepoints (var.)'
+  ) #'AC (lag 6)',
 corrMatVar$region <- region_names
 
-corrMatVar <- remove_rownames(corrMatVar) 
+corrMatVar <- remove_rownames(corrMatVar)
 corrMatVar <- column_to_rownames(corrMatVar, var = 'region')
 
-# continue here and transform this into a table 
+# continue here and transform this into a table
 # then make a new table with different ranks for each variable
-corrMatVar <- round(corrMatVar,2)
-corrMatVar <- rownames_to_column(corrMatVar, var="Region")
+corrMatVar <- round(corrMatVar, 2)
+corrMatVar <- rownames_to_column(corrMatVar, var = "Region")
 
-# use package formattable 
+# use package formattable
 customGreen0 = "#DeF7E9"
 customGreen = "#71CA97"
 customRed = "#ff7f7f"
@@ -559,15 +574,15 @@ f.color_bar <- function (color = "lightgray", fun = "proportion", ...)
 corrMatVar %>%
   mutate(
     Region = formatter("span", style = ~ style(color = "black"))(Region),
-    `SD` = f.color_bar(customGrey, function(x) myNormalize(x,TRUE,TRUE))(`SD`),
+    `Standard deviation` = f.color_bar(customGrey, function(x) myNormalize(x,TRUE,TRUE))(`Standard deviation`),
     `Color of noise` = f.color_bar(customGrey,function(x) myNormalize(x,TRUE,FALSE))(`Color of noise`),
     `Entropy` = f.color_bar(customGrey,function(x) myNormalize(x,TRUE,TRUE))(`Entropy`),
-    `AC (lag 1)` = f.color_bar(customGrey, function(x) myNormalize(x,TRUE,FALSE))(`AC (lag 1)`),
-    `CP (mean)` = f.color_bar(customGrey,function(x) myNormalize(x,TRUE,TRUE))(`CP (mean)`),
-    `CP (var.)` = f.color_bar(customGrey,function(x) myNormalize(x,TRUE,TRUE))(`CP (var.)`)
+    `Autocorrelation (lag 1)` = f.color_bar(customGrey, function(x) myNormalize(x,TRUE,FALSE))(`Autocorrelation (lag 1)`),
+    `Changepoints (mean)` = f.color_bar(customGrey,function(x) myNormalize(x,TRUE,TRUE))(`Changepoints (mean)`),
+    `Changepoints (var.)` = f.color_bar(customGrey,function(x) myNormalize(x,TRUE,TRUE))(`Changepoints (var.)`)
   ) %>%
   kable("html", escape = F) %>%
-  kable_styling("hover", full_width = F) %>%
+  kable_styling("hover", full_width = F, font_size = 20) %>%
   row_spec(0, color = "black", bold =T) %>%
   column_spec(1, width = "4cm",color = 'black', italic = T)%>%
   column_spec(2, width = "3cm",color = 'black')%>%
@@ -578,17 +593,22 @@ corrMatVar %>%
   column_spec(7, width = "3cm",color = 'black')%>%
   #column_spec(8, width = "3cm",color = 'black')%>%
   #column_spec (1:7,border_left = T, border_right = T)%>%
-  kable_classic()%>%
-  save_kable("tableNew.png",density = 600, zoom = 2)
+  kable_classic()
+
+#%>%
+#  save_kable("tableNew.png",density = 600, zoom = 2)
   
 
 # plot regionwise change points
-sampleList <- c(1,2,3,4,5)
 
+sampleList <- c(1,2,3,4,5)
 source("framework.R")
+yLabel = "Number of assaults (per 100,000)"
+unitOffset <- 2006
+statsPositions <- c(27,80,145)
 
 pNew <-
-  framework.plotPublication(
+  framework.plotPublicationTest(
     modelResults,
     5,
     "Regions of interest",
@@ -597,21 +617,12 @@ pNew <-
     freq,
     freqUnit,
     yLabel,
-    sampleList = sampleList, regionFlag = TRUE)
+    sampleList = sampleList, regionFlag = TRUE,
+    unitOffset = unitOffset,
+    stats_positions = statsPositions)
 
 pNew
 
-plot_tab <- ggplotGrob(pNew)
-print(plot_tab)
-
-
-plot_filtered <- gtable_filter(plot_tab, 
-                               "(background|panel|axis-t|axis-l-3-1|axis-r|axis-b-1-3|strip-t|xlab|ylab|subtitle|title|caption|tag)",
-                               trim=FALSE)
-
-pNew <- as_ggplot(plot_filtered)
-print(pNew)
-
-ggsave("regionCPNew2.png", units="in", width=10, height=10, dpi=600)
+ggsave("regionCPNew2Test2.png", units="in", width=10, height=10, dpi=600)
 
 

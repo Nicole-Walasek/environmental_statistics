@@ -498,6 +498,8 @@ pNew <-
 pNew_Sep <- pNew + facet_wrap( ~ ppID, ncol = 2)
 pNew_Sep
 
+
+
 # min and max plots for different statistics
 dataModel <- modelResults$data
 time <- modelResults$data[[1]]$time
@@ -582,8 +584,13 @@ framework.plotMinMax(
   time,
   abs(modelResults$Statistics_Stationary$stat_ac1),
   dataModel,
-  'autocorrelation data'
+  'autocorrelation (stationary time series)'
 )
+
+modelResults$Statistics_Stationary$stat_ac1[317]
+modelResults$Statistics_Stationary$stat_ac1[15]
+
+
 framework.plotMinMax(
   time,
   abs(modelResults$Statistics_Stationary$statVar_ac1),
@@ -595,7 +602,12 @@ framework.plotMinMax(
 framework.plotMinMax(time,
                      abs(modelResults$Statistics_Mean$m_ac1),
                      dataModel,
-                     'autocorrelation data')
+                     'autocorrelation (raw time series)')
+
+modelResults$Statistics_Mean$m_ac1[305]
+modelResults$Statistics_Mean$m_ac1[87]
+
+
 framework.plotMinMax(
   time,
   abs(modelResults$Statistics_Variance$v_ac1),
@@ -763,10 +775,6 @@ corrplot(
 
 # for publication ---------------------------------------------------------
 
-# similar everywhere: 99,6,137
-# same sd, different cp 350,471 
-
-
 
 # same everwhere 265,69,230
 # V1       V2 V3
@@ -777,29 +785,21 @@ corrplot(
 
 
 #80,382
-# 98, 449
 # V1       V2 V3
 # 80   80 4.749210 17
 # 382 382 4.764534 10
 
-sampleList <- c(265,69,230)
+sampleList <- c(80,382)
 
-totalDF <-
-  cbind(
-    modelResults$Statistics_Mean$ppID,
-    modelResults$Statistics_Mean$m_sd,
-    modelResults$Statistics_ChangePointsAIC$meanNumberAIC,
-    modelResults$Statistics_ChangePointsAIC$varNumberAIC
-  )
-totalDF <- as.data.frame(totalDF)
-
-
-totalDF[totalDF$V1 %in% sampleList,]
-#view(totalDF[order(totalDF$V3,totalDF$V2),])
 
 source("framework.R")
+
+unitOffset = 2006
+statsPositions = c(27,80,145)
+
+yLabel = "Number of assaults (per 100,000)"
 pNew <-
-  framework.plotPublication(
+  framework.plotPublicationTest(
     modelResults,
     length(sampleList),
     "title",
@@ -808,25 +808,15 @@ pNew <-
     freq,
     freqUnit,
     yLabel,
-    sampleList = sampleList, regionFlag = FALSE
+    sampleList = sampleList, regionFlag = FALSE, 
+    unitOffset = unitOffset, 
+    stats_positions = statsPositions
   )
 
 pNew
 
 
-plot_tab <- ggplotGrob(pNew)
-print(plot_tab)
-
-
-plot_filtered <- gtable_filter(plot_tab, 
-                               "(background|panel|axis-t|axis-l-2-1|axis-r|axis-b-1-2|strip-t|xlab|ylab|subtitle|title|caption|tag)",
-                               trim=FALSE)
-
-pNew <- as_ggplot(plot_filtered)
-print(pNew)
-
-
-ggsave("SameEverwhereNew.png", units="in", width=10, height=10, dpi=600)
+ggsave("SameSD.png", units="in", width=10, height=7, dpi=600)
 
 
 
@@ -834,6 +824,7 @@ ggsave("SameEverwhereNew.png", units="in", width=10, height=10, dpi=600)
 source("framework.R")
 #pp: 105,55
 # pp 179,55
+yLabel = "Number of assaults (per 100,000)"
 sampleList <- c(105,55) #124
 pNew <-
   framework.plotPublication2(
@@ -846,29 +837,16 @@ pNew <-
     freqUnit,
     yLabel,
     sampleList = sampleList,
-    nObs, type = 'mean'
+    type = 'mean', 
+    unitOffset = unitOffset
   )
 
 pNew
 
 
+ggsave("stabilityAndChange_rawNew.png", units="in", width=10, height=7, dpi=600)
 
-plot_tab <- ggplotGrob(pNew)
-print(plot_tab)
-
-
-plot_filtered <- gtable_filter(plot_tab, 
-                               "(background|panel|axis-t|axis-l-1-1|axis-r|axis-b-1-1|strip-t|xlab|ylab|subtitle|title|caption|tag)",
-                               trim=FALSE)
-
-pNew <- as_ggplot(plot_filtered)
-print(pNew)
-
-
-
-ggsave("stabilityAndChange_rawNew.png", units="in", width=10, height=5, dpi=600)
-
-
+yLabel = 'Variance in number of assaults (per 100,000)'
 pNew <-
   framework.plotPublication3(
     modelResults,
@@ -880,26 +858,14 @@ pNew <-
     freqUnit,
     yLabel,
     sampleList = sampleList,
-    nObs, type = 'variance'
+    type = 'variance',
+    unitOffset = unitOffset
   )
 
 pNew
 
 
-
-plot_tab <- ggplotGrob(pNew)
-print(plot_tab)
-
-
-plot_filtered <- gtable_filter(plot_tab, 
-                               "(background|panel|axis-t|axis-l-1-1|axis-r|axis-b-1-1|strip-t|xlab|ylab|subtitle|title|caption|tag)",
-                               trim=FALSE)
-
-pNew <- as_ggplot(plot_filtered)
-print(pNew)
-
-
-ggsave("stabilityAndChange_varianceNew.png", units="in", width=10, height=5, dpi=600)
+ggsave("stabilityAndChange_varianceNew.png", units="in", width=10, height=7, dpi=600)
 
 
 

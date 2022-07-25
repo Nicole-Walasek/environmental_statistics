@@ -41,11 +41,12 @@ explore.plotTimeSeries <-
     
 
     if(length(sampleList) == 0){
-      ppSelection <- sample(unique(as.numeric(data$ppID)), numParticipants)
+      ppSelection <- sample(as.numeric(as.character(unique(data$ppID))), numParticipants)
     }else{
       ppSelection <- sampleList
     }
     
+          
     dataNew <-
       filter(data, ppID %in% ppSelection) #select random participants
     
@@ -399,6 +400,9 @@ explore.visualize_autocorr <- function(data, lagMax, nSample, typeAutoCorr,
     timevar = 'participant' ,
     direction = "long"
   )
+  print(acfMatLong)
+  
+  
   acfMatLong$participant <- plyr::mapvalues(acfMatLong$participant, from = unique(acfMatLong$participant), to = unique(data$ppID))
   acfMatLong$lag <- as.factor(acfMatLong$lag)
   acfMatLong$autocorrelation <- round(acfMatLong$value, 2)
@@ -406,7 +410,6 @@ explore.visualize_autocorr <- function(data, lagMax, nSample, typeAutoCorr,
   
   min = round(min(acfMat),2) -0.01
   max = round(max(acfMat),2) +0.01
-  
   
   if(regionsFlag){
     region_names <- setNames(levels(data$region), levels(data$ppID))

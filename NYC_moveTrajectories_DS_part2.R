@@ -18,6 +18,7 @@ library(ggmap)
 library(cowplot)
 library(gtable)
 library(grid)
+library(RColorBrewer)
 
 # helper function 
 element_textbox_highlight <- function(..., hi.labels = NULL, hi.fill = NULL,
@@ -142,33 +143,43 @@ dataUnfilteredCorrected %>% ggplot(aes(x = date, y = assaultAdjusted)) +
 
 # plot only the monthly data 
 
+regionNames <- unique(dataCorrected$region)
+colorNames <- brewer.pal(n = length(regionNames), name = 'RdYlBu')
+colorNames[3] <- '#ac7339'
+names(colorNames) = regionNames
 
-pTemporal <- ggplot(data = dataCorrected, aes(x = date, y = assaultAdjusted)) +
-  geom_line(color = "#196F3D", size = 0.8) +gghighlight(date >= as.Date("2013-01-01") & date < as.Date("2014-01-01"), label_key = date,
-                           unhighlighted_params = list(color = 'black')) + ##909497
-  annotate("rect", xmin = as.Date("2013-01-01"), xmax = as.Date("2014-01-01"), ymin = 0, ymax = 43,
-           alpha = .2)+
-  scale_x_date(breaks = c(as.Date("2006-01-01"),as.Date("2013-01-01"),as.Date("2021-01-01")),labels = c("2006","2013", "2021"))+
-  facet_grid(~region)+
-  theme(legend.position = "none") + theme_bw() + labs(y = 'Number of assaults (per 100,000)\n', x = 'Date') +
+
+pTemporal2 <-
+  ggplot(data = dataCorrected, aes(x = date, y = assaultAdjusted, group = region)) +
+  geom_line(aes(color = region), size = 0.8) +
+  annotate(
+    "rect",
+    xmin = as.Date("2013-01-01"),
+    xmax = as.Date("2014-01-01"),
+    ymin = 0,
+    ymax = 43,
+    alpha = .2
+  ) +scale_color_manual(values=colorNames)+
+  scale_x_date(expand = c(0.01,0.01) ,limits = as.Date(c('2006-01-01','2021-01-01')),breaks = seq.Date(as.Date("2006-01-01"), as.Date("2021-01-01"), by = "1 year"),
+    labels = c(2006:2021)
+  ) +
+  theme(legend.position = "none") + theme_bw() + labs(y = 'Number of assaults (per 100,000)\n', x = 'Year') +
   theme(
     plot.title = element_text(face = "bold", size = 15) ,
     axis.ticks = element_line(colour = "grey70", size = 0.2),
-    #panel.grid.major = element_blank(),
+    panel.grid.major = element_blank(),
     panel.grid.minor = element_blank(),
     panel.border = element_rect(colour = 'grey70', size = 1),
-    legend.position = c(0.06, 0.75), 
-    text = element_text(size = 25), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))+
-  theme(strip.background = element_blank())
+    legend.position = 'None',
+    text = element_text(size = 35),
+    axis.text.x = element_text(
+      angle = 45,
+      vjust = 1,
+      hjust = 1
+    )) + theme(strip.background = element_blank()) + scale_y_continuous(expand = c(0.01,0.01)) 
 
-
-print(pTemporal)
-
-
-plot_tab <- ggplotGrob(pTemporal)
-plot_filtered <- gtable_filter(plot_tab, 
-                               "(background|panel|axis-t|axis-l|axis-r|axis-b-1|strip-t|xlab|ylab|subtitle|title|caption|tag)",
-                               trim=FALSE)
+print(pTemporal2)
+plot_filtered <- pTemporal2
 
 make_circles <- function(centers, radius, nPoints = 100){
   # centers: the data frame of centers with ID
@@ -195,24 +206,42 @@ ROI_df <- data.frame(longitudes, lattitudes, region)
 ROI_df$region <- as.factor(ROI_df$region)
 
 ## get map and plot station locations 
-register_google(key = "INSERT YOUR GOOGLE API KEY")
+register_google(key = "INSERT YOUR KEY")
 
 newyork.map <-  get_map(location = c(lon = mean(ROI_df$longitudes), 
                                      lat = mean(ROI_df$lattitudes)), 
-                        maptype = "roadmap", color = 'bw',zoom = 10) #
+                        maptype = "roadmap", color = 'bw',zoom = 10, scale =4)#
 
 
 # change opacity of basemap
 mapatt <- attributes(newyork.map)
-map_transparent <- matrix(adjustcolor(newyork.map, alpha.f = 0.7), nrow = nrow(newyork.map))
+map_transparent <- matrix(adjustcolor(newyork.map, alpha.f = 0.95), nrow = nrow(newyork.map))
 attributes(map_transparent) <- mapatt
 
 # here is the data frame for all circles
 myCircles <- make_circles(ROI_df, 5)
+regionNames <- levels(myCircles$ID)
+names(colorNames) = regionNames
 
-p <- ggmap(map_transparent) + geom_point(data = ROI_df, aes(x = longitudes, y = lattitudes),shape = region,size = 8, color = 'black') +
-  geom_polygon(data = myCircles, aes(lon, lat, group = ID), fill = "#F1C40F", alpha = 0.3) + labs(y = 'Longitude\n', x = '\nLatitude')
+
+p <-
+  ggmap(map_transparent, inherit.aes = FALSE) + geom_polygon(
+    inherit.aes = FALSE,
+    data = myCircles,
+    aes(lon, lat, group = ID, fill = ID),
+    alpha = 0.5
+  ) +
+  geom_point(inherit.aes = FALSE,
+    data = ROI_df,
+    aes(x = longitudes, y = lattitudes),
+    shape = region,
+    size = 12,
+    color = 'black'
+  ) +
+  labs(y = 'Longitude\n', x = '\nLatitude') + xlim(-74.35, -73.7) + ylim(40.45, 40.9) + scale_fill_manual(values = colorNames) +
+  theme(legend.position = "None", text = element_text(size = 35))
 print(p) 
+
 
 
 # add crime data for one month 
@@ -223,20 +252,20 @@ dfPlotting <- nyc_spatial %>%
 
 crimes <- data.frame(st_coordinates(dfPlotting$geometry))
 
-pNew <- p + geom_point(data = crimes, aes(x= X, y = Y),shape =20, size = 1,alpha = 0.015, color = '#196F3D')+
-  theme(text = element_text(size = 25)) 
+pNew <- p + geom_point(data = crimes, aes(x= X, y = Y),shape =20, size = 1,alpha = 0.02, color = '#196F3D')+
+  theme(text = element_text(size = 35)) 
 
 print(pNew)
 
 # now put them both together with cowplot 
 
-plot_grid(pNew, plot_filtered, scale = 0.9,labels = "AUTO",label_size = 20, 
+plot_grid(pNew, plot_filtered, scale = 0.9,labels = "AUTO",label_size = 35, 
           ncol =1, rel_widths = c(1, 3), rel_heights = c(2.5,1),
           label_x = 0, label_y = 0.95,
           hjust = -0.8, vjust = -1)
 
 
-ggsave("ROINew.png", units="in", width=21, height=18, dpi=600)
+ggsave("ROINew3Test.png", units="in", width=21, height=22, dpi=600)
 
 
 # additional data cleaning ------------------------------------------------

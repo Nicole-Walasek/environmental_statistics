@@ -58,7 +58,7 @@ makeStationary <- function(y,
   
   data_SeasonalaAdj <- y
   if (logTransform) {
-    data_SeasonalaAdj <- log(data_SeasonalaAdj)
+    data_SeasonalaAdj <- log(data_SeasonalaAdj+0.0001) # offset in case any values are zero, this way we can still apply the logarithm
   }
   
   
@@ -130,7 +130,6 @@ changePoints_SegVals <-
     
     lAll <- split(x, rep(seq_along(cpsAll), times = diff(c(1, cpsAll))))
     
-    
     if (type == "All") {
       resMean <- sapply(lAll, function(x)
         mean(data$y[x]))
@@ -153,14 +152,17 @@ changePoints_SegVals <-
     resultVar <- as.numeric(rep(resVar, times = diff(c(1, cpsVar))))
     resultVarMean <-
       as.numeric(rep(resVarMean, times = diff(c(1, cpsVar))))
+    
     if (segType == 'Mean') {
       return(resultMean)
     } else if (segType == 'Var') {
       return(resultVar)
-    } else{
+    } else if (segType == 'VarPos'){
+      return(cpsVar) 
+    }else{
       return(resultVarMean)
     }
-    
+     
   }
 
 
@@ -446,12 +448,15 @@ framework.applyModel <- function(data,
       lm_valsMean  = map(data_lm, augment)
     )
   
+  
+  
   # add variance in the outcome variable
   if (residuals) {
     data <- ddply(data, .(ppID)) %>%
       mutate(yVar = unlist(map(data_models$lm_valsMean, ".resid")))
     
   } else{
+    
     data <- ddply(data, .(ppID)) %>%
       mutate(yVar =
                as.numeric(sapply(split(
@@ -572,7 +577,7 @@ framework.applyModel <- function(data,
       
     )
   
-  #adding all the other model coefficients for the mean
+  # adding all the other model coefficients for the mean
   
   # add model coefficients
   
@@ -1661,11 +1666,26 @@ framework.plotCP <-
     return(pModel)
   }
 
-
-
-
 # plots the changepoints in mean and variance
-framework.plotPublication <-
+
+
+
+# helper function
+myBreaks <- function(x){
+  
+  if((max(x)/5) > 10){
+    breaks <- seq(0, max(x), by = 100)
+  }
+  else if ((max(x)/5) > 5){
+    breaks <- seq(0, max(x), by = 10)
+  }else {
+    breaks <- seq(0, max(x), by = 5)
+  }
+  breaks <- round(breaks)
+}
+
+# free the y-axis and force the plots to be in one columns
+framework.plotPublicationTest <-
   function(dataAll,
            numPP,
            modelTitle,
@@ -1674,7 +1694,7 @@ framework.plotPublication <-
            freq = 1,
            xlab = "time",
            ylab,
-           sampleList = c(),regionFlag = FALSE) {
+           sampleList = c(),regionFlag = FALSE, unitOffset, stats_positions) {
     # get the changePoints
     
     if (typePenalty == 'MBIC') {
@@ -1699,6 +1719,16 @@ framework.plotPublication <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_MBIC,
+              "ind",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
       } else{
         cpSegMean <-
           unlist(pmap(
@@ -1720,6 +1750,16 @@ framework.plotPublication <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_MBIC,
+              "All",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
         
       }
       
@@ -1745,6 +1785,17 @@ framework.plotPublication <-
             ),
             changePoints_SegVals
           ))
+        
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_AIC,
+              "ind",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
       } else{
         cpSegMean <-
           unlist(pmap(
@@ -1766,9 +1817,21 @@ framework.plotPublication <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-  
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_AIC,
+              "All",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
       }
       
     }
+    
+    
     data <- dataAll %>%
       dplyr::select(data, ppID) %>%
       unnest(cols = c(data))
@@ -1779,7 +1842,7 @@ framework.plotPublication <-
     
     otherStatsData <-
       cbind(
-        dataAll$Statistics_Mean$ppID,
+        as.numeric(as.character(dataAll$Statistics_Mean$ppID)),
         dataAll$Statistics_Mean$m_sd,
         dataAll$Statistics_Mean$m_ac1,
         dataAll$Statistics_Stationary$stat_ac1,
@@ -1792,18 +1855,39 @@ framework.plotPublication <-
       c('ppID','sd', 'ac', 'stat_ac', 'entropy', 'color')
     
     
-    
     if (length(sampleList) == 0) {
-      results <-
-        filter(data, ppID %in% sample(unique(data$ppID), numPP)) #select random participants for plotting
+        sampleList <-sample(unique(data$ppID), numPP)
+        results <- filter(data, ppID %in% sampleList) #select random participants for plotting
+        cpSegVarPos <- cpSegVarPos[sampleList]
     } else{
-      results <- filter(data, ppID %in% sampleList)
+      results <- filter(data, ppID %in% sampleList) 
+      cpSegVarPos <- cpSegVarPos[sampleList]
+      
     }
-    
     
     results$ppID <- as.factor(results$ppID)
     
     pModel <- ggplot(data = results)
+    
+    # add segments for the mean
+    pModel <-
+      pModel + geom_line(aes(x = time, y = cpSegMean, group = ppID),
+                         size = 0.9,
+                         color = "#1E8449")
+    
+    # add segments for the variance
+    pModel <-
+      pModel + geom_ribbon(
+        aes(
+          x = time,
+          ymin = cpSegVarMean - cpSegVar,
+          ymax = cpSegVarMean + cpSegVar,
+          group = ppID
+        ),
+        fill = "grey70" ,
+        alpha = 0.3
+      )
+    
     
     pModel <- pModel +
       geom_line(
@@ -1811,57 +1895,44 @@ framework.plotPublication <-
         color = "black", 
         size = 0.6,
         alpha = 0.8
-      )
+      ) 
+    
+    # determine the number of observations
+    
+    nObs = max(results$time)
     breaks = seq(0, nObs, freq)
-    labels = rep("", length(breaks))
-    labels[1] <- 2006
-    labels[nObs/freq +1] <- nObs/freq + 2006
-
+    labels = breaks/freq + unitOffset
+    
     pModel <-
-      pModel + labs(y = paste(ylab,"\n"), x = paste("\n",xlab)) + scale_x_continuous(breaks =
-                                                              breaks, labels = labels)
-    # add segments for the mean
-    pModel <-
-      pModel + geom_line(aes(x = time, y = cpSegMean, group = ppID),
-                         size = 0.9,
-                         color = "#1E8449")
- 
-    # add segments for the variance
-    pModel <-
-      pModel + geom_ribbon(
-        aes(
-          x = time,
-          ymin = cpSegVarMean - cpSegVar * 2,
-          ymax = cpSegVarMean + cpSegVar * 2,
-          group = ppID
-        ),
-        fill = "grey70",
-        alpha = 0.3
+      pModel + labs(y = paste(ylab, "\n"), x = paste("\n", xlab)) + scale_x_continuous(
+        limits = c(0, nObs + 1),
+        expand = c(0.01, 0.01),
+        breaks =
+          breaks,
+        labels = labels
       )
     
-    
-
     pModel <-
-      pModel +       theme(legend.position = "none") + theme_bw() + theme(
+      pModel +  theme(legend.position = "none") + theme_bw() + theme(
         plot.title = element_text(face = "bold", size = 15) ,
         axis.ticks = element_line(colour = "grey70", size = 0.2),
         panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
         panel.border = element_rect(colour = 'grey70', size = 1),
         legend.position = c(0.06, 0.75),
-        text = element_text(size = 15), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+        text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
       )
     
     
     if(regionFlag){
       region_names <- setNames(levels(data$region), levels(data$ppID))
       
-      pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 2,labeller=as_labeller(region_names)) + theme(
-        strip.background = element_blank(),strip.text = element_textbox_highlight(size = 12, face = "bold"))
+      pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 1, scales = 'free_y', strip.position="right",labeller=as_labeller(region_names)) + theme(
+      strip.background = element_blank(),strip.text = element_textbox_highlight(size = 15, face = "bold")) + scale_y_continuous(limits= c(-3,NA),breaks = myBreaks, expand = c(0.1,0.05)) 
       
     }else{
-      pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 2) + theme(
-        strip.background = element_blank(),strip.text = element_textbox_highlight(size = 12, face = "bold"))
+      pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 1, scales = 'free_y',strip.position="right") + theme(
+        strip.background = element_blank(),strip.text = element_textbox_highlight(size = 15, face = "bold")) +scale_y_continuous(limits= c(-3,NA),breaks = myBreaks, expand = c(0.1,0.05))
       
     }
     
@@ -1869,59 +1940,85 @@ framework.plotPublication <-
     # add annotations sd
     labelVec = c()
     for(idx in 1:length(sampleList)){
-      labelVec[idx] = paste("ac:", round(otherStatsData[sampleList[idx], ]$ac, 3))
+      labelVec[idx] = paste("autocorrelation:", round(otherStatsData[otherStatsData$ppID == sampleList[idx], ]$ac, 2))
     }
 
     dat_text <- data.frame(
       label = labelVec,
       ppID   = sampleList,
-      x     = rep(12, length(sampleList)),
-      y     = rep(-2, length(sampleList))
+      x     = rep(stats_positions[1], length(sampleList)), 
+      y     = rep(-2.5, length(sampleList))
     )
-
     pNew_Sep <- pNew_Sep + geom_text(data    = dat_text,
-                                     mapping = aes(x = x, y = y, label = label),size =4,fontface = "bold.italic")
-
-
+                                     mapping = aes(x = x, y = y, label = label),size =5,fontface = "bold.italic")
 
 
 
     # add annotations entropy
-
     labelVec = c()
     for(idx in 1:length(sampleList)){
-      labelVec[idx] = paste("entropy:", round(otherStatsData[sampleList[idx], ]$entropy, 3))
+      labelVec[idx] = paste("entropy:", round(otherStatsData[otherStatsData$ppID == sampleList[idx], ]$entropy, 2))
     }
 
     dat_text <- data.frame(
       label = labelVec,
       ppID   = sampleList,
-      x     = rep(65, length(sampleList)),
-      y     = rep(-2, length(sampleList))
+      x     = rep(stats_positions[2], length(sampleList)),
+      y     = rep(-2.5, length(sampleList))
     )
 
     pNew_Sep <- pNew_Sep + geom_text(data    = dat_text,
-                                     mapping = aes(x = x, y = y, label = label),size =4, fontface = "bold.italic")
+                                     mapping = aes(x = x, y = y, label = label),size =5, fontface = "bold.italic")
 
 
     # add annotations color of noise
     labelVec = c()
     for(idx in 1:length(sampleList)){
-      labelVec[idx] = paste("color of noise:", round(otherStatsData[sampleList[idx], ]$color, 3))
+      labelVec[idx] = paste("color of noise:", round(otherStatsData[otherStatsData$ppID == sampleList[idx], ]$color, 2))
     }
     dat_text <- data.frame(
       label = labelVec,
       ppID   = sampleList,
-      x     = rep(130, length(sampleList)),
-      y     = rep(-2, length(sampleList))
+      x     = rep(stats_positions[3], length(sampleList)),
+      y     = rep(-2.5, length(sampleList))
     )
 
     pNew_Sep <- pNew_Sep + geom_text(data    = dat_text,
-                                     mapping = aes(x = x, y = y, label = label), size =4, fontface = "bold.italic")
+                                     mapping = aes(x = x, y = y, label = label), size =5, fontface = "bold.italic")
 
-
+    
+    # add segments for stable variance
+    xStartArray <- list()
+    
+    for(lstIDX in c(1:length(cpSegVarPos))){
+      lst <- unlist(cpSegVarPos[lstIDX])
+      lst <- c(1,lst)
+      lst <- lst[-length(lst)]
+      xStartArray[lstIDX] <- list(lst)
+    }
+    
+    yPosDf <- results %>% group_by(ppID) %>% summarise(min_y = min(y))
+    yPosDf$min_y <- yPosDf$min_y -1  
+    getIDX <- match(sampleList, yPosDf$ppID)
+    yPosDf <- yPosDf[getIDX,]
+    
+    dfSeg= data.frame(matrix(ncol=5,nrow=length(unlist(cpSegVarPos)), dimnames=list(NULL, c("x", "y", "xend","yend","ppID"))))
+    dfSeg$xend <- unlist(cpSegVarPos)
+    segLengths <- sapply(cpSegVarPos, length)
+    dfSeg$ppID <- as.factor(rep(sampleList, segLengths))
+    
+    dfSeg$y <- rep(yPosDf$min_y, segLengths)
+    dfSeg$yend <- dfSeg$y
+    dfSeg$x <- unlist(xStartArray)
+    dfSeg$x <- dfSeg$x +0.5
+    dfSeg$xend <- dfSeg$xend -0.5
+    
+    pNew_Sep <- pNew_Sep + geom_segment(data = dfSeg, mapping = aes(x= x, y=y, xend = xend, yend = yend), size = 1)
+    
+    
     return(pNew_Sep)
   }
+
 
 # plots the changepoints in mean and variance
 framework.plotPublication2 <-
@@ -1933,7 +2030,14 @@ framework.plotPublication2 <-
            freq = 1,
            xlab = "time",
            ylab,
-           sampleList = c(), nObs, type) {
+           sampleList = c(), type,unitOffset) {
+    
+    
+    # step one determine the number of measures of each participants data
+    numMeasures <- map_dbl(dataAll$data, function(data) {
+      nrow(data)
+    })
+    
     # get the changePoints
     
     if (typePenalty == 'MBIC') {
@@ -1941,7 +2045,7 @@ framework.plotPublication2 <-
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$y)
-          })), each = nObs)
+          })), times = numMeasures)
         cpSegVar <-
           unlist(pmap(
             list(dataAll$data, dataAll$changePoints_MBIC, "ind", "Var"),
@@ -1957,11 +2061,22 @@ framework.plotPublication2 <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_MBIC,
+              "ind",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
       } else{
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$y)
-          })), each = nObs)
+          })), times = numMeasures)
         cpSegVar <-
           unlist(pmap(
             list(dataAll$data, dataAll$changePoints_MBIC, "All", "Var"),
@@ -1977,6 +2092,17 @@ framework.plotPublication2 <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_MBIC,
+              "All",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
         
       }
       
@@ -1985,7 +2111,7 @@ framework.plotPublication2 <-
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$y)
-          })), each = nObs)
+          })), times = numMeasures)
         
         
         cpSegVar <-
@@ -2003,11 +2129,22 @@ framework.plotPublication2 <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_AIC,
+              "ind",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
       } else{
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$y)
-          })), each = nObs)
+          })), times = numMeasures)
         
         cpSegVar <-
           unlist(pmap(
@@ -2024,16 +2161,48 @@ framework.plotPublication2 <-
             ),
             changePoints_SegVals
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_AIC,
+              "All",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
       }
       
     }
+    
+    
+    # get IQR
+    
+    
+    data75 <-
+      rep(unlist(map_dbl(dataAll$data, function(data) {
+        quantile(data$y, 0.75)
+      })), times = numMeasures)
+    
+    
+    data25 <-
+      rep(unlist(map_dbl(dataAll$data, function(data) {
+        quantile(data$y, 0.25)
+      })), times = numMeasures)
+    
     data <- dataAll %>%
       dplyr::select(data, ppID) %>%
       unnest(cols = c(data))
+    
+    
     data <- as.data.frame(data)
     data$cpSegMean <- cpSegMean
+    data$quan75 <- data75
+    data$quan25 <- data25
     data$cpSegVar <- cpSegVar
     data$cpSegVarMean <- cpSegVarMean
+    
     
     # get fitted model data 
     
@@ -2053,24 +2222,41 @@ framework.plotPublication2 <-
         
     }
       
-      dataModel <- as.data.frame(dataModel)
+    dataModel <- as.data.frame(dataModel)
       
     
     
     # add trend to the data
     data$trend <- dataModel$.fitted
-      
+    
+    
     if (length(sampleList) == 0) {
-      results <-
-        filter(data, ppID %in% sample(unique(data$ppID), numPP)) #select random participants for plotting
+      
+      sampleList <-sample(unique(data$ppID), numPP)
+      results <- filter(data, ppID %in% sampleList) #select random participants for plotting
+      cpSegVarPos <- cpSegVarPos[sampleList]
     } else{
       results <- filter(data, ppID %in% sampleList)
+      cpSegVarPos <- cpSegVarPos[sampleList]
     }
-    
     
     results$ppID <- as.factor(results$ppID)
 
     pModel <- ggplot(data = results)
+    
+    # add segments for the variance
+    pModel <-
+      pModel + geom_ribbon(
+        aes(
+          x = time,
+          ymin = cpSegVarMean - cpSegVar,
+          ymax = cpSegVarMean + cpSegVar,
+          group = ppID
+        ),
+        fill = "grey70",
+        alpha = 0.3
+      )
+    
     
     pModel <- pModel +
       geom_line(
@@ -2081,35 +2267,54 @@ framework.plotPublication2 <-
       )
     
     breaks = seq(0, nObs, freq)
-    labels = rep("", length(breaks))
-    labels[1] <- 2006
-    labels[nObs/freq +1] <- nObs/freq + 2006
+    labels = breaks/freq + unitOffset
+    
     
     pModel <-
-      pModel + labs(y = paste(ylab,"\n"), x = paste("\n",xlab)) + scale_x_continuous(breaks =
+      pModel + labs(y = paste(ylab,"\n"), x = paste("\n",xlab)) + scale_x_continuous(limits = c(-5, max(numMeasures) + 5),
+                                                                                     expand = c(0.01, 0.01), breaks =
                                                                breaks, labels = labels)
     # add segments for the mean
     pModel <-
       pModel + geom_line(aes(x = time, y = cpSegMean, group = ppID),
                          size = 0.8,
                          color = "#F1C40F", linetype = "dashed")
-    # add segments for the variance
-    pModel <-
-      pModel + geom_ribbon(
-        aes(
-          x = time,
-          ymin = cpSegVarMean - cpSegVar * 2,
-          ymax = cpSegVarMean + cpSegVar * 2,
-          group = ppID
-        ),
-        fill = "grey70",
-        alpha = 0.3
-      )
+    
     
     # add trend line 
     pModel <- pModel + geom_line(aes(x = time, y = trend, group = ppID),
                                  size = 0.8,
                                  color = "#1E8449")
+    
+    
+    # add iQR statistics
+    pModel <- pModel + geom_segment(aes(x = (max(numMeasures) + 5), y = quan25,xend =(max(numMeasures) + 5), yend = quan75, group = ppID),
+                                 size = 0.8,
+                                 color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x = (max(numMeasures) + 2), y = quan25,xend =(max(numMeasures) + 5), yend = quan25, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x = (max(numMeasures) + 2), y = quan75,xend =(max(numMeasures) + 5), yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    
+    
+    pModel <- pModel + geom_segment(aes(x = -5, y = quan25,xend =-5, yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x = -5, y = quan25,xend =-2, yend = quan25, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x =-5, y = quan75,xend =-2, yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    
     
     pModel <-
       pModel +       theme(legend.position = "none") + theme_bw() + theme(
@@ -2119,20 +2324,49 @@ framework.plotPublication2 <-
         panel.grid.minor = element_blank(),
         panel.border = element_rect(colour = 'grey70', size = 1),
         legend.position = c(0.06, 0.75),
-        text = element_text(size = 15), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+        text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
       )
     
     
     
-    pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 2) + theme(
-      strip.background = element_blank(),strip.text = element_textbox_highlight(size = 12, face = "bold"))
+    pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 1, scales = 'free_y',strip.position="right") + theme(
+      strip.background = element_blank(),strip.text = element_textbox_highlight(size = 15, face = "bold")) + scale_y_continuous(limits= c(-1,NA),breaks = myBreaks, expand = c(0.1,0.05))
+    
+    # add segments for stable variance
+    xStartArray <- list()
+    for(lstIDX in c(1:length(cpSegVarPos))){
+      lst <- unlist(cpSegVarPos[lstIDX])
+      lst <- c(1,lst)
+      lst <- lst[-length(lst)]
+      xStartArray[lstIDX] <- list(lst)
+    }
+    
+    yPosDf <- results %>% group_by(ppID) %>% summarise(min_y = min(y))
+    yPosDf$min_y <- yPosDf$min_y -1  
+    getIDX <- match(sampleList, yPosDf$ppID)
+    yPosDf <- yPosDf[getIDX,]
+    
+    dfSeg= data.frame(matrix(ncol=5,nrow=length(unlist(cpSegVarPos)), dimnames=list(NULL, c("x", "y", "xend","yend","ppID"))))
+    dfSeg$xend <- unlist(cpSegVarPos)
+    segLengths <- sapply(cpSegVarPos, length)
+    dfSeg$ppID <- as.factor(rep(sampleList, segLengths))
+    
+    dfSeg$y <- rep(yPosDf$min_y, segLengths)
+    dfSeg$yend <- dfSeg$y
+    dfSeg$x <- unlist(xStartArray)
+    dfSeg$x <- dfSeg$x +0.5
+    dfSeg$xend <- dfSeg$xend -0.5
+    
+    
+    pNew_Sep <- pNew_Sep + geom_segment(data = dfSeg, mapping = aes(x= x, y=y, xend = xend, yend = yend), size = 1)
+    
     
     
     return(pNew_Sep)
   }
 
 
-framework.plotPublication3 <-
+  framework.plotPublication3 <-
   function(dataAll,
            numPP,
            modelTitle,
@@ -2141,7 +2375,13 @@ framework.plotPublication3 <-
            freq = 1,
            xlab = "time",
            ylab,
-           sampleList = c(), nObs, type) {
+           sampleList = c(), type,unitOffset) {
+    
+    # step one determine the number of measures of each participants data
+    numMeasures <- map_dbl(dataAll$data, function(data) {
+      nrow(data)
+    })
+    
     # get the changePoints
     
     if (typePenalty == 'MBIC') {
@@ -2165,11 +2405,22 @@ framework.plotPublication3 <-
             ),
             changePoints_SegValsVar
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_MBIC,
+              "ind",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
       } else{
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$yVar)
-          })), each = nObs)
+          })), times = numMeasures)
         cpSegVar <-
           unlist(pmap(
             list(dataAll$data, dataAll$changePoints_MBIC, "All", "Var"),
@@ -2185,6 +2436,17 @@ framework.plotPublication3 <-
             ),
             changePoints_SegValsVar
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_MBIC,
+              "All",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
         
       }
       
@@ -2193,7 +2455,7 @@ framework.plotPublication3 <-
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$yVar)
-          })), each = nObs)
+          })), times = numMeasures)
         
         
         cpSegVar <-
@@ -2211,11 +2473,22 @@ framework.plotPublication3 <-
             ),
             changePoints_SegValsVar
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_AIC,
+              "ind",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
       } else{
         cpSegMean <-
           rep(unlist(map_dbl(dataAll$data, function(data) {
             mean(data$yVar)
-          })), each = nObs)
+          })), times = numMeasures)
         
         cpSegVar <-
           unlist(pmap(
@@ -2232,14 +2505,40 @@ framework.plotPublication3 <-
             ),
             changePoints_SegValsVar
           ))
+        cpSegVarPos <-
+          pmap(
+            list(
+              dataAll$data,
+              dataAll$changePoints_AIC,
+              "All",
+              "VarPos"
+            ),
+            changePoints_SegVals
+          )
+        
       }
       
     }
+    
+    # get IQR
+    data75 <-
+      rep(unlist(map_dbl(dataAll$data, function(data) {
+        quantile(data$yVar, 0.75)
+      })), times = numMeasures)
+    
+    data25 <-
+      rep(unlist(map_dbl(dataAll$data, function(data) {
+        quantile(data$yVar, 0.25)
+      })), times = numMeasures)
+    
+    
     data <- dataAll %>%
       dplyr::select(data, ppID) %>%
       unnest(cols = c(data))
     data <- as.data.frame(data)
     data$cpSegMean <- cpSegMean
+    data$quan75 <- data75
+    data$quan25 <- data25
     data$cpSegVar <- cpSegVar
     data$cpSegVarMean <- cpSegVarMean
     
@@ -2269,16 +2568,33 @@ framework.plotPublication3 <-
     data$trend <- dataModel$.fitted
     
     if (length(sampleList) == 0) {
+      sampleList <-sample(unique(data$ppID), numPP)
       results <-
         filter(data, ppID %in% sample(unique(data$ppID), numPP)) #select random participants for plotting
+      cpSegVarPos <- cpSegVarPos[sampleList]
     } else{
       results <- filter(data, ppID %in% sampleList)
+      cpSegVarPos <- cpSegVarPos[sampleList]
+      
     }
     
     
     results$ppID <- as.factor(results$ppID)
     
     pModel <- ggplot(data = results)
+    
+    # add segments for the variance
+    pModel <-
+      pModel + geom_ribbon(
+        aes(
+          x = time,
+          ymin = cpSegVarMean - cpSegVar,
+          ymax = cpSegVarMean + cpSegVar,
+          group = ppID
+        ),
+        fill = "grey70",
+        alpha = 0.3
+      )
     
     pModel <- pModel +
       geom_line(
@@ -2288,36 +2604,52 @@ framework.plotPublication3 <-
         alpha = 0.9
       )
     
-    breaks = seq(0, nObs, freq)
-    labels = rep("", length(breaks))
-    labels[1] <- 2006
-    labels[nObs/freq +1] <- nObs/freq + 2006
+    breaks = seq(0, max(numMeasures), freq)
+    labels = breaks/freq + unitOffset
+    
     
     pModel <-
-      pModel + labs(y = paste(ylab, "\n"), x = paste("\n",xlab)) + scale_x_continuous(breaks =
+      pModel + labs(y = paste(ylab, "\n"), x = paste("\n",xlab)) + scale_x_continuous(limits = c(-5, max(numMeasures) + 5),
+                                                                                      expand = c(0.01, 0.01),breaks =
                                                                breaks, labels = labels)
     # add segments for the mean
     pModel <-
       pModel + geom_line(aes(x = time, y = cpSegMean, group = ppID),
                          size = 0.8,
                          color = "#F1C40F", linetype = "dashed")
-    # add segments for the variance
-    pModel <-
-      pModel + geom_ribbon(
-        aes(
-          x = time,
-          ymin = cpSegVarMean - cpSegVar * 2,
-          ymax = cpSegVarMean + cpSegVar * 2,
-          group = ppID
-        ),
-        fill = "grey70",
-        alpha = 0.3
-      )
-    
+   
     # add trend line 
     pModel <- pModel + geom_line(aes(x = time, y = trend, group = ppID),
                                  size = 0.8,
                                  color = "#1E8449")
+    
+    # add iQR statistics
+    pModel <- pModel + geom_segment(aes(x = (max(numMeasures) + 5), y = quan25,xend =(max(numMeasures) + 5), yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x = (max(numMeasures) + 2), y = quan25,xend =(max(numMeasures) + 5), yend = quan25, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x = (max(numMeasures) + 2), y = quan75,xend =(max(numMeasures) + 5), yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    
+    
+    pModel <- pModel + geom_segment(aes(x = -5, y = quan25,xend =-5, yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x = -5, y = quan25,xend =-2, yend = quan25, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
+    pModel <- pModel + geom_segment(aes(x =-5, y = quan75,xend =-2, yend = quan75, group = ppID),
+                                    size = 0.8,
+                                    color = "#0066cc")
+    
     
     pModel <-
       pModel +       theme(legend.position = "none") + theme_bw() + theme(
@@ -2327,12 +2659,43 @@ framework.plotPublication3 <-
         panel.grid.minor = element_blank(),
         panel.border = element_rect(colour = 'grey70', size = 1),
         legend.position = c(0.06, 0.75),
-        text = element_text(size = 15), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
+        text = element_text(size = 20), axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)
       )
     
     
-    pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 2) + theme(
-      strip.background = element_blank(),strip.text = element_textbox_highlight(size = 12, face = "bold"))
+    pNew_Sep <- pModel + facet_rep_wrap(~ ppID, ncol = 1, scales = 'free_y', strip.position="right") + theme(
+      strip.background = element_blank(),strip.text = element_textbox_highlight(size = 15, face = "bold")) + scale_y_continuous(limits= c(-60,NA),breaks = myBreaks, expand = c(0.1,0.05))
+    
+    
+    
+    # add segments for stable variance
+    xStartArray <- list()
+    for(lstIDX in c(1:length(cpSegVarPos))){
+      lst <- unlist(cpSegVarPos[lstIDX])
+      lst <- c(1,lst)
+      lst <- lst[-length(lst)]
+      xStartArray[lstIDX] <- list(lst)
+    }
+    
+    yPosDf <- results %>% group_by(ppID) %>% summarise(min_y = min(y))
+    yPosDf$min_y <- yPosDf$min_y -50  
+    getIDX <- match(sampleList, yPosDf$ppID)
+    yPosDf <- yPosDf[getIDX,]
+    
+    dfSeg= data.frame(matrix(ncol=5,nrow=length(unlist(cpSegVarPos)), dimnames=list(NULL, c("x", "y", "xend","yend","ppID"))))
+    dfSeg$xend <- unlist(cpSegVarPos)
+    segLengths <- sapply(cpSegVarPos, length)
+    dfSeg$ppID <- as.factor(rep(sampleList, segLengths))
+    
+    dfSeg$y <- rep(yPosDf$min_y, segLengths)
+    dfSeg$yend <- dfSeg$y
+    dfSeg$x <- unlist(xStartArray)
+    dfSeg$x <- dfSeg$x +0.5
+    dfSeg$xend <- dfSeg$xend -0.5
+    
+    
+    pNew_Sep <- pNew_Sep + geom_segment(data = dfSeg, mapping = aes(x= x, y=y, xend = xend, yend = yend), size = 1)
+    
     
     return(pNew_Sep)
   }
